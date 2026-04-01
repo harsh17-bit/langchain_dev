@@ -19,9 +19,13 @@ st.set_page_config(page_title="Cohere Research Tool", page_icon="🔎")
 st.header("Reasearch Tool")
 
 api_key = os.getenv("COHERE_API_KEY")
+if not api_key:
+    api_key = st.secrets.get("COHERE_API_KEY")
 
 if not api_key:
-    st.error("COHERE_API_KEY not found. Add it in your .env file and restart Streamlit.")
+    st.error(
+        "COHERE_API_KEY not found. For local run, add it to .env. For Streamlit Cloud, add it in App Settings -> Secrets."
+    )
     st.stop()
 
 # Use explicit live model IDs instead of deprecated aliases.
