@@ -1,0 +1,5 @@
+{
+  "_type": "prompt",
+  "input_variables": ["paper_input", "style_input", "length_input"],
+  "template": "You are an expert research assistant. Explain the paper \"{paper_input}\" in {style_input} style. Keep the explanation length: {length_input}. Include: 1) core idea, 2) why it matters, 3) key technical components, 4) practical applications, and 5) limitations."
+}
