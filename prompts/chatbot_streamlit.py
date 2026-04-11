@@ -1,6 +1,6 @@
 import os
-from datetime import datetime
 from pathlib import Path
+from typing import TypedDict
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -9,90 +9,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 load_dotenv()
 
-st.set_page_config(
-    page_title="Cohere Chat Studio",
-    page_icon="💬",
-    layout="wide",
-)
-
-st.markdown(
-    """
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
-
-    :root {
-        --bg: #f7f5ef;
-        --card: #fffdf8;
-        --ink: #10231d;
-        --accent: #0f766e;
-        --accent-2: #d97706;
-        --border: #d6d3c5;
-        --muted: #5c6b65;
-    }
-
-    .stApp {
-        background:
-          radial-gradient(circle at 10% 10%, #e9f4ef 0%, transparent 45%),
-          radial-gradient(circle at 90% 5%, #fef1d4 0%, transparent 38%),
-          var(--bg);
-        color: var(--ink);
-        font-family: 'Space Grotesk', sans-serif;
-    }
-
-    .top-banner {
-        border: 1px solid var(--border);
-        border-radius: 18px;
-        padding: 1rem 1.2rem;
-        margin-bottom: 1rem;
-        background: linear-gradient(145deg, #fffef8 0%, #f8f6ee 100%);
-        box-shadow: 0 10px 30px rgba(16, 35, 29, 0.06);
-    }
-
-    .top-banner h2 {
-        margin: 0;
-        font-weight: 700;
-        letter-spacing: 0.2px;
-    }
-
-    .top-banner p {
-        margin-top: 0.3rem;
-        color: var(--muted);
-    }
-
-    .small-pill {
-        border: 1px solid var(--border);
-        background: var(--card);
-        border-radius: 999px;
-        padding: 0.2rem 0.7rem;
-        display: inline-block;
-        margin-right: 0.5rem;
-        color: var(--muted);
-        font-size: 0.82rem;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-st.markdown(
-    """
-    <div class="top-banner">
-      <h2>Cohere Chat Studio</h2>
-      <p>Conversation UI for your LangChain + Cohere chatbot with model fallback and history export.</p>
-      <span class="small-pill">LangChain</span>
-      <span class="small-pill">Cohere</span>
-      <span class="small-pill">Streamlit</span>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-
-api_key = os.getenv("COHERE_API_KEY") or st.secrets.get("COHERE_API_KEY")
-if not api_key:
-    st.error("COHERE_API_KEY not found. Add it to .env or Streamlit secrets.")
-    st.stop()
-
-HISTORY_FILE = Path(__file__).with_name("chathistory,txt")
+st.set_page_config(page_title="Chat-Bot", page_icon=" ", layout="wide")
 
 MODEL_CHOICES = [
     "command-a-03-2025",
@@ -101,84 +18,210 @@ MODEL_CHOICES = [
     "command-r-08-2024",
 ]
 
-with st.sidebar:
-    st.subheader("Model Settings")
-    default_primary = os.getenv("COHERE_MODEL", "command-a-03-2025")
-    default_fallback = os.getenv("COHERE_FALLBACK_MODEL", "command-r7b-12-2024")
+DEFAULT_SYSTEM_PROMPT = (
+    "You are a helpful, high-signal AI assistant. Answer directly and practically. "
+    "Ask one clarifying question only when needed. For coding requests, provide simple working examples."
+)
 
-    primary_model = st.selectbox(
-        "Primary model",
-        MODEL_CHOICES,
-        index=MODEL_CHOICES.index(default_primary) if default_primary in MODEL_CHOICES else 0,
-    )
-    fallback_model = st.selectbox(
-        "Fallback model",
-        MODEL_CHOICES,
-        index=MODEL_CHOICES.index(default_fallback) if default_fallback in MODEL_CHOICES else 1,
-    )
-    temperature = st.slider("Temperature", min_value=0.0, max_value=1.0, value=0.3, step=0.1)
+THEME_TOKENS = {
+    "Light": {
+        "bg": "#f7f7f8",
+        "surface": "#ffffff",
+        "panel": "#ffffff",
+        "border": "#e5e7eb",
+        "text": "#1f2937",
+        "muted": "#6b7280",
+        "accent": "#10a37f",
+    },
+    "Dark": {
+        "bg": "#212121",
+        "surface": "#2a2a2a",
+        "panel": "#303030",
+        "border": "#3a3a3a",
+        "text": "#ececec",
+        "muted": "#a7a7a7",
+        "accent": "#10a37f",
+    },
+}
 
-    st.markdown("---")
-    if st.button("Clear conversation", use_container_width=True):
-        st.session_state.messages = [
-            {"role": "system", "content": "You are a helpful AI assistant."}
-        ]
-        st.session_state.current_model_name = primary_model
-        st.rerun()
-
-if "messages" not in st.session_state:
-    st.session_state.messages = [
-        {"role": "system", "content": "You are a helpful AI assistant."}
-    ]
-
-if "current_model_name" not in st.session_state:
-    st.session_state.current_model_name = primary_model
+HISTORY_FILE = Path(__file__).with_name("chathistory,txt")
 
 
-def build_model(model_name: str) -> ChatCohere:
+class ChatItem(TypedDict):
+    role: str
+    content: str
+
+
+def init_session_state() -> None:
+    st.session_state.setdefault("theme", "Light")
+    st.session_state.setdefault("messages", [])
+    st.session_state.setdefault("temperature", 0.3)
+    st.session_state.setdefault("current_model_name", os.getenv("COHERE_MODEL", MODEL_CHOICES[0]))
+    st.session_state.setdefault("system_prompt", DEFAULT_SYSTEM_PROMPT)
+
+
+def get_api_key() -> str | None:
+    key = os.getenv("COHERE_API_KEY")
+    if key:
+        return key
+    try:
+        return st.secrets.get("COHERE_API_KEY")
+    except Exception:
+        return None
+
+
+def build_theme_css(theme_name: str) -> str:
+    palette = THEME_TOKENS[theme_name]
+    return f"""
+    <style>
+    :root {{
+        --bg: {palette['bg']};
+        --surface: {palette['surface']};
+        --panel: {palette['panel']};
+        --border: {palette['border']};
+        --text: {palette['text']};
+        --muted: {palette['muted']};
+        --accent: {palette['accent']};
+    }}
+
+    .stApp {{
+        background: var(--bg);
+        color: var(--text);
+    }}
+
+    header[data-testid="stHeader"] {{
+        background: transparent;
+    }}
+
+    section[data-testid="stSidebar"] {{
+        background: var(--surface);
+        border-right: 1px solid var(--border);
+    }}
+
+    div[data-testid="stChatMessage"] {{
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+    }}
+
+    .stButton > button,
+    .stDownloadButton > button {{
+        background: var(--panel);
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+    }}
+
+    .stButton > button:hover,
+    .stDownloadButton > button:hover {{
+        border-color: var(--accent);
+    }}
+
+    .stSelectbox div[data-baseweb="select"] > div,
+    .stTextArea textarea,
+    div[data-testid="stChatInput"] textarea,
+    div[data-testid="stChatInput"] input {{
+        background: var(--panel) !important;
+        color: var(--text) !important;
+        border: 1px solid var(--border) !important;
+    }}
+
+    .empty-note {{
+        color: var(--muted);
+        margin: 1rem 0;
+    }}
+    </style>
+    """
+
+
+def build_model(model_name: str, api_key: str) -> ChatCohere:
     return ChatCohere(
         model=model_name,
-        temperature=temperature,
+        temperature=st.session_state.temperature,
         cohere_api_key=api_key,
     )
 
 
-def to_langchain_messages(history: list[dict]):
-    mapped = []
+def to_langchain_messages(history: list[ChatItem]) -> list:
+    mapped = [SystemMessage(content=st.session_state.system_prompt)]
     for item in history:
-        role = item["role"]
-        text = item["content"]
-        if role == "system":
-            mapped.append(SystemMessage(content=text))
-        elif role == "user":
-            mapped.append(HumanMessage(content=text))
-        elif role == "assistant":
-            mapped.append(AIMessage(content=text))
+        if item["role"] == "user":
+            mapped.append(HumanMessage(content=item["content"]))
+        elif item["role"] == "assistant":
+            mapped.append(AIMessage(content=item["content"]))
     return mapped
 
 
-def save_history(history: list[dict]) -> None:
+def save_history(history: list[ChatItem]) -> None:
     lines = []
     for item in history:
-        if item["role"] == "system":
-            continue
         if item["role"] == "user":
             lines.append(f'HumanMessage(content="{item["content"]}")')
         elif item["role"] == "assistant":
             lines.append(f'AIMessage(content="{item["content"]}")')
-
     HISTORY_FILE.write_text("\n".join(lines), encoding="utf-8")
 
 
-for msg in st.session_state.messages:
-    if msg["role"] == "system":
-        continue
-    with st.chat_message("user" if msg["role"] == "user" else "assistant"):
-        st.markdown(msg["content"])
+def render_sidebar() -> None:
+    with st.sidebar:
+        st.title("Cohere Chat")
+        st.selectbox(
+            "Theme",
+            ["Light", "Dark"],
+            index=0 if st.session_state.theme == "Light" else 1,
+            key="theme_picker",
+        )
 
-prompt = st.chat_input("Ask anything...")
+        default_model = os.getenv("COHERE_MODEL", MODEL_CHOICES[0])
+        st.selectbox(
+            "Model",
+            MODEL_CHOICES,
+            index=MODEL_CHOICES.index(default_model) if default_model in MODEL_CHOICES else 0,
+            key="model_picker",
+        )
+        st.slider(
+            "Temperature",
+            min_value=0.0,
+            max_value=1.0,
+            value=st.session_state.temperature,
+            step=0.1,
+            key="temperature_picker",
+        )
 
-if prompt:
+        with st.expander("Assistant behavior", expanded=False):
+            st.text_area(
+                "Instructions",
+                value=st.session_state.system_prompt,
+                height=140,
+                key="system_prompt_picker",
+            )
+
+        st.session_state.theme = st.session_state.theme_picker
+        st.session_state.current_model_name = st.session_state.model_picker
+        st.session_state.temperature = st.session_state.temperature_picker
+        st.session_state.system_prompt = st.session_state.system_prompt_picker
+
+        st.markdown("---")
+        if st.button("New chat", use_container_width=True):
+            st.session_state.messages = []
+            st.rerun()
+        if st.button("Clear saved history", use_container_width=True):
+            st.session_state.messages = []
+            if HISTORY_FILE.exists():
+                HISTORY_FILE.unlink()
+            st.rerun()
+
+
+def render_chat_history() -> None:
+    if not st.session_state.messages:
+        st.markdown('<div class="empty-note">Start a conversation.</div>', unsafe_allow_html=True)
+
+    for msg in st.session_state.messages:
+        with st.chat_message("user" if msg["role"] == "user" else "assistant"):
+            st.markdown(msg["content"])
+
+
+def process_user_prompt(api_key: str, prompt: str) -> None:
     st.session_state.messages.append({"role": "user", "content": prompt})
 
     with st.chat_message("user"):
@@ -186,32 +229,13 @@ if prompt:
 
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
-            model = build_model(st.session_state.current_model_name)
+            model = build_model(st.session_state.current_model_name, api_key)
             request_messages = to_langchain_messages(st.session_state.messages)
-
             try:
                 result = model.invoke(request_messages)
             except Exception as err:
-                error_text = str(err)
-                should_fallback = (
-                    st.session_state.current_model_name != fallback_model
-                    and (
-                        "status_code: 404" in error_text
-                        or "was removed" in error_text
-                        or "not found" in error_text.lower()
-                    )
-                )
-
-                if should_fallback:
-                    st.warning(
-                        f"Model '{st.session_state.current_model_name}' unavailable. Switching to '{fallback_model}'."
-                    )
-                    st.session_state.current_model_name = fallback_model
-                    model = build_model(st.session_state.current_model_name)
-                    result = model.invoke(request_messages)
-                else:
-                    st.error(f"Request failed: {err}")
-                    st.stop()
+                st.error(f"Request failed: {err}")
+                st.stop()
 
             answer = result.content if isinstance(result.content, str) else str(result.content)
             st.markdown(answer)
@@ -219,24 +243,37 @@ if prompt:
     st.session_state.messages.append({"role": "assistant", "content": answer})
     save_history(st.session_state.messages)
 
-history_text = "\n".join(
-    [
-        f"[{m['role'].upper()}] {m['content']}"
-        for m in st.session_state.messages
-        if m["role"] != "system"
-    ]
-)
 
-c1, c2 = st.columns([2, 1])
-with c1:
-    st.caption(
-        f"Current model: {st.session_state.current_model_name} | Last update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-    )
-with c2:
-    st.download_button(
-        "Download chat",
-        data=history_text,
-        file_name="chat_history.txt",
-        mime="text/plain",
-        use_container_width=True,
-    )
+def render_download_button() -> None:
+    history_text = "\n".join([f"[{m['role'].upper()}] {m['content']}" for m in st.session_state.messages])
+    with st.sidebar:
+        st.download_button(
+            "Download chat",
+            data=history_text,
+            file_name="chat_history.txt",
+            mime="text/plain",
+            use_container_width=True,
+        )
+
+
+def main() -> None:
+    init_session_state()
+
+    api_key = get_api_key()
+    if not api_key:
+        st.error("COHERE_API_KEY not found. Add it to .env or Streamlit secrets.")
+        st.stop()
+
+    render_sidebar()
+    st.markdown(build_theme_css(st.session_state.theme), unsafe_allow_html=True)
+    render_chat_history()
+
+    prompt = st.chat_input("Message Cohere Chat")
+    if prompt:
+        process_user_prompt(api_key, prompt)
+
+    render_download_button()
+
+
+if __name__ == "__main__":
+    main()
